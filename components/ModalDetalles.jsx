@@ -10,14 +10,19 @@ export default function ModalDetalles({ producto, onClose }) {
 
   useEffect(() => {
     if (producto) {
-      const fotosExtras = producto.imagenes_producto 
-        ? producto.imagenes_producto.map(img => img.url) 
+      // MONGODB: Las fotos extras vienen en 'imagenes_extras' (array de strings)
+      const fotosExtras = Array.isArray(producto.imagenes_extras) 
+        ? producto.imagenes_extras 
         : [];
+      
+      // Creamos la galería combinando la principal y las extras, eliminando duplicados o nulos
       const nuevaGaleria = [...new Set([producto.imagen, ...fotosExtras])].filter(Boolean);
       setGaleria(nuevaGaleria);
       
+      // Seteamos la foto principal
       setFotoActiva(producto.imagen || nuevaGaleria[0] || '');
       
+      // Seleccionamos el primer talle que tenga stock real
       const primerTalleDisponible = Object.keys(producto.stock || {}).find(t => producto.stock[t] > 0);
       setTalleSel(primerTalleDisponible || '');
     }
@@ -27,22 +32,29 @@ export default function ModalDetalles({ producto, onClose }) {
 
   const handleAdd = () => {
     if (!talleSel) return alert("POR FAVOR, SELECCIONÁ UN TALLE");
-    addToCart(producto, cantidad, talleSel);
+    // Usamos _id de MongoDB para el carrito
+    addToCart({ ...producto, id: producto._id }, cantidad, talleSel);
     onClose();
     isCartOpen.set(true);
   };
 
-  // FUNCIÓN CORREGIDA: Ahora busca 'ancho' y 'largo' que es lo que guardás en el Admin
   const getMedidas = (talle) => {
-    // 1. Intentamos sacar del objeto 'medidas' que viene de Supabase
+    // Buscamos las medidas cargadas en MongoDB
     if (producto.medidas && producto.medidas[talle]) {
-      return {
-        ancho: producto.medidas[talle].ancho || '--',
-        largo: producto.medidas[talle].largo || '--'
+      const { ancho, largo, unidades } = producto.medidas[talle];
+      
+      // Caso especial para PACKS
+      if (talle === 'PACK') {
+        return { label: 'Unidades', valor: unidades || '0' };
+      }
+      
+      return { 
+        ancho: ancho || '--', 
+        largo: largo || '--' 
       };
     }
     
-    // 2. Valores por defecto si no hay nada cargado
+    // Fallback por si no hay medidas cargadas
     const defaults = {
       'S': { ancho: '48', largo: '68' }, 
       'M': { ancho: '50', largo: '70' }, 
@@ -115,14 +127,17 @@ export default function ModalDetalles({ producto, onClose }) {
             <div className="mb-8">
               <p className="text-[10px] font-black uppercase text-white/40 mb-4 tracking-widest">// Seleccionar Talle</p>
               <div className="flex flex-wrap gap-2 mb-6">
-                {['S', 'M', 'L', 'XL', 'XXL'].map(talle => {
+                {['S', 'M', 'L', 'XL', 'XXL', 'PACK'].map(talle => {
                   const stock = producto.stock?.[talle] || 0;
+                  // Si no hay stock de este talle, no lo mostramos o lo deshabilitamos
+                  if (stock === 0 && talle !== talleSel) return null; 
+
                   return (
                     <button
                       key={talle}
                       disabled={stock === 0}
                       onClick={() => setTalleSel(talle)}
-                      className={`min-w-[55px] py-3 text-xs font-black border transition-all ${
+                      className={`min-w-[55px] py-3 px-2 text-xs font-black border transition-all ${
                         stock === 0 ? 'opacity-10 cursor-not-allowed border-white/5' :
                         talleSel === talle ? 'bg-[#C6FF33] text-black border-[#C6FF33]' : 'text-white border-white/10 hover:border-white/40'
                       }`}
@@ -133,22 +148,33 @@ export default function ModalDetalles({ producto, onClose }) {
                 })}
               </div>
 
-              {/* RENDERIZADO DE MEDIDAS CORREGIDO */}
+              {/* RENDERIZADO DE MEDIDAS DINÁMICO */}
               {talleSel && (
                 <div className="p-4 bg-white/[0.02] border border-white/10 flex justify-around items-center animate-in slide-in-from-bottom-2 duration-500">
+                  {talleSel === 'PACK' ? (
                     <div className="text-center">
-                       <p className="text-[8px] text-white/30 uppercase font-black tracking-widest mb-1">Ancho</p>
-                       <p className="text-[#7D39EB] font-raw italic text-2xl leading-none">
-                         {getMedidas(talleSel).ancho}<span className="text-[10px] ml-1">CM</span>
-                       </p>
+                      <p className="text-[8px] text-white/30 uppercase font-black tracking-widest mb-1">Contenido</p>
+                      <p className="text-[#7D39EB] font-raw italic text-2xl leading-none uppercase">
+                        {getMedidas('PACK').valor} Unidades
+                      </p>
                     </div>
-                    <div className="w-px h-8 bg-white/10" />
-                    <div className="text-center">
-                       <p className="text-[8px] text-white/30 uppercase font-black tracking-widest mb-1">Largo</p>
-                       <p className="text-[#7D39EB] font-raw italic text-2xl leading-none">
-                         {getMedidas(talleSel).largo}<span className="text-[10px] ml-1">CM</span>
-                       </p>
-                    </div>
+                  ) : (
+                    <>
+                      <div className="text-center">
+                         <p className="text-[8px] text-white/30 uppercase font-black tracking-widest mb-1">Ancho</p>
+                         <p className="text-[#7D39EB] font-raw italic text-2xl leading-none">
+                           {getMedidas(talleSel).ancho}<span className="text-[10px] ml-1">CM</span>
+                         </p>
+                      </div>
+                      <div className="w-px h-8 bg-white/10" />
+                      <div className="text-center">
+                         <p className="text-[8px] text-white/30 uppercase font-black tracking-widest mb-1">Largo</p>
+                         <p className="text-[#7D39EB] font-raw italic text-2xl leading-none">
+                           {getMedidas(talleSel).largo}<span className="text-[10px] ml-1">CM</span>
+                         </p>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
